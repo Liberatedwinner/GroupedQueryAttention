@@ -52,8 +52,8 @@ class GroupedQueryAttention(nn.Module):
         # assertion checks
         assert query_heads % kv_heads == 0, (
             f'`query_heads`: {query_heads}; `kv_heads`: {kv_heads},'
-            f'Cannot make head groups!'
-            f'need to be query_heads = (some number) * kv_heads'
+            'Cannot make head groups!'
+            'need to be query_heads = (some number) * kv_heads'
         )
         assert dim_head % 8 == 0, f'Please check whether dim_head ({dim_head}) = (some number) * 8'
         assert dim_head <= 128, f'Please check whether dim_head ({dim_head}) <= 128'
@@ -65,7 +65,6 @@ class GroupedQueryAttention(nn.Module):
         self.query_heads = query_heads
         self.kv_heads = kv_heads
         self.num_head_groups = query_heads // kv_heads
-        # self.dropout_rate = dropout_rate
         self.dropout = nn.Dropout(p=dropout_rate)
         self.use_layer_norm = use_layer_norm
         self.gamma_init = gamma_init
@@ -78,7 +77,6 @@ class GroupedQueryAttention(nn.Module):
         ) if use_layer_norm else None
 
         setting_dict['bias'] = bias
-        # note that embed_dim = query_heads * dim_head
         self.fc_q = nn.Linear(embed_dim, embed_dim, **setting_dict)
         self.fc_k = nn.Linear(embed_dim, kv_embed_dim, **setting_dict)
         self.fc_v = nn.Linear(embed_dim, kv_embed_dim, **setting_dict)
