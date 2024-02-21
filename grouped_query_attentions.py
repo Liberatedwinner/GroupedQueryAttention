@@ -27,9 +27,9 @@ class SoftmaxOne(nn.Module):
 
 
 def softmax_one(
-        x: Tensor, dimension: int = -1, keep_dim: bool = True
+        x: Tensor, dim: int = -1, keep_dim: bool = True
 ) -> Tensor:
-    return SoftmaxOne()(x, dimension, keep_dim)
+    return SoftmaxOne()(x, dim, keep_dim)
 
 
 class GroupedQueryAttention(nn.Module):
@@ -57,6 +57,7 @@ class GroupedQueryAttention(nn.Module):
         )
         assert dim_head % 8 == 0, f'Please check whether dim_head ({dim_head}) = (some number) * 8'
         assert dim_head <= 128, f'Please check whether dim_head ({dim_head}) <= 128'
+        # prevent memory exploding
 
         embed_dim = query_heads * dim_head
         kv_embed_dim = kv_heads * dim_head
@@ -104,7 +105,9 @@ class GroupedQueryAttention(nn.Module):
     ) -> Tensor:
         scale = q.shape[-1] ** (- 0.5) if scale is None else scale
         if self.num_head_groups > 1 or force_grouped:
-            q = rearrange(q, 'b (h_kv g) n d -> b g h_kv n d', g=self.num_head_groups)
+            q = rearrange(
+                q, 'b (h_kv g) n d -> b g h_kv n d', g=self.num_head_groups
+            )
             group_pattern = 'g h_kv'
         else:
             group_pattern = 'h_kv'
@@ -131,12 +134,12 @@ class GroupedQueryAttention(nn.Module):
 
         if mask is not None:
             if mask.ndim == 2:
-                print('Expand the shape of mask, two times')
+                # print('Expand the shape of mask, two times')
                 mask = rearrange(mask, 'b s -> b () () s')
             elif mask.ndim == 3:
-                print('Expand the shape of mask, one time')
+                # print('Expand the shape of mask, one time')
                 mask = rearrange(mask, 'b n s -> b () n s')
-            similarity.masked_fill_(~ mask, torch.finfo(similarity.dtype).min)
+            similarity.masked_fill_(~mask.bool(), torch.finfo(similarity.dtype).min)
 
         softmax_ftn = softmax_one if use_softmax1 else softmax
         similarity = softmax_ftn(similarity, dim=-1)
@@ -147,6 +150,7 @@ class GroupedQueryAttention(nn.Module):
     def forward(
             self,
             input_tensor: Tensor,
+            input_for_multi: Optional[Tensor] = None,
             scale: Optional[float] = None,
             mask: Optional[Tensor] = None,
             use_lower_tri_attn: bool = False,
@@ -161,18 +165,19 @@ class GroupedQueryAttention(nn.Module):
             n: length of sequence q
             s: length of sequence k, v
             h: number of heads; #(q_heads) != #(k_heads) = #(v_heads)
-            d: the dimension of embedding
+            d: the dimension of heads
         """
         input_tensor = self.attn_norm(input_tensor)
+        input_for_multi = input_tensor if input_for_multi is None else input_for_multi
         dim_split_pattern = 'b n (h d) -> b h n d'  # split and transpose
 
-        q, k, v = map(
-            lambda ftn: ftn(input_tensor), (self.fc_q, self.fc_k, self.fc_v)
+        q = self.fc_q(input_tensor)
+        k, v = map(
+            lambda ftn: ftn(input_for_multi), (self.fc_k, self.fc_v)
         )
-        assert q.ndim == k.ndim == v.ndim == 4, (
-            'each Query, Key, and Value need to be 4-dim.;'
-            f'got these: q ({q.shape}), k ({k.shape}), v ({v.shape})'
-        )
+        # q, k, v = map(
+        #     lambda ftn: ftn(input_tensor), (self.fc_q, self.fc_k, self.fc_v)
+        # )
 
         q = rearrange(
             q, dim_split_pattern, h=self.query_heads
