@@ -175,10 +175,6 @@ class GroupedQueryAttention(nn.Module):
         k, v = map(
             lambda ftn: ftn(input_for_multi), (self.fc_k, self.fc_v)
         )
-        # q, k, v = map(
-        #     lambda ftn: ftn(input_tensor), (self.fc_q, self.fc_k, self.fc_v)
-        # )
-
         q = rearrange(
             q, dim_split_pattern, h=self.query_heads
         )
