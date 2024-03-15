@@ -43,7 +43,7 @@ class GQAEncoder(nn.Module):
             dtype: Optional[torch.dtype] = None
     ):
         super().__init__()
-        act_dict = {'gelu': nn.GELU()}
+        act_dict = {'gelu': nn.GELU(), 'silu': nn.SiLU()}
         attn_param_dict = dict(
             query_heads=query_heads,
             kv_heads=kv_heads,
@@ -120,7 +120,7 @@ class GQADecoder(nn.Module):
             dtype: Optional[torch.dtype] = None
     ):
         super().__init__()
-        act_dict = {'gelu': nn.GELU()}
+        act_dict = {'gelu': nn.GELU(), 'silu': nn.SiLU()}
         # TODO: get as dict itself?
         attn_param_dict = dict(
             query_heads=query_heads,
