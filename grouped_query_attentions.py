@@ -125,7 +125,9 @@ class GroupedQueryAttention(nn.Module):
 
     def _masking_similarity(
             self,
-            q: Tensor, k: Tensor, similarity: Tensor,
+            q: Tensor,
+            k: Tensor,
+            similarity: Tensor,
             mask: Optional[Tensor] = None,
             use_lower_tri_attn: bool = False,
             use_softmax_one: bool = False
