@@ -16,7 +16,9 @@ class SoftmaxOne(nn.Module):
 
     @staticmethod
     def forward(
-            x: Tensor, dim: int = -1, keepdim: bool = True
+            x: Tensor,
+            dim: int = -1,
+            keepdim: bool = True
     ) -> Tensor:
         # for numerical stability, take max; not mean
         max_values = torch.max(x, dim, keepdim=keepdim)[0]
@@ -27,7 +29,9 @@ class SoftmaxOne(nn.Module):
 
 
 def softmax_one(
-        x: Tensor, dim: int = -1, keep_dim: bool = True
+        x: Tensor,
+        dim: int = -1,
+        keep_dim: bool = True
 ) -> Tensor:
     return SoftmaxOne()(x, dim, keep_dim)
 
@@ -83,6 +87,8 @@ class GroupedQueryAttention(nn.Module):
         self.fc_v = nn.Linear(embed_dim, kv_embed_dim, **setting_dict)
         self.fc_out = nn.Linear(kv_embed_dim, embed_dim, **setting_dict)
 
+        self.group_pattern = ''
+
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -108,11 +114,11 @@ class GroupedQueryAttention(nn.Module):
             q = rearrange(
                 q, 'b (h_kv g) n d -> b g h_kv n d', g=self.num_head_groups
             )
-            group_pattern = 'g h_kv'
+            self.group_pattern = 'g h_kv'
         else:
-            group_pattern = 'h_kv'
+            self.group_pattern = 'h_kv'
 
-        similarity = einsum(q, k, f'b {group_pattern} n d, b h_kv s d -> b h_kv n s')
+        similarity = einsum(q, k, f'b {self.group_pattern} n d, b h_kv s d -> b {self.group_pattern} n s')  # WLOG, 5-dim tensor if `num_head_groups` > 1
         similarity *= scale
 
         return similarity
@@ -122,7 +128,7 @@ class GroupedQueryAttention(nn.Module):
             q: Tensor, k: Tensor, similarity: Tensor,
             mask: Optional[Tensor] = None,
             use_lower_tri_attn: bool = False,
-            use_softmax1: bool = False
+            use_softmax_one: bool = False
     ) -> Tensor:
         batch_size_q, _, seq_length_q, _ = q.shape
         seq_length_kv = k.shape[2]
@@ -135,13 +141,13 @@ class GroupedQueryAttention(nn.Module):
         if mask is not None:
             if mask.ndim == 2:
                 # print('Expand the shape of mask, two times')
-                mask = rearrange(mask, 'b s -> b () () s')
+                mask = rearrange(mask, 'b s -> b () () () s')
             elif mask.ndim == 3:
                 # print('Expand the shape of mask, one time')
-                mask = rearrange(mask, 'b n s -> b () n s')
+                mask = rearrange(mask, 'b n s -> b () () n s')
             similarity.masked_fill_(~mask.bool(), torch.finfo(similarity.dtype).min)
 
-        softmax_ftn = softmax_one if use_softmax1 else softmax
+        softmax_ftn = softmax_one if use_softmax_one else softmax
         similarity = softmax_ftn(similarity, dim=-1)
         similarity = self.dropout(similarity)
 
@@ -154,7 +160,7 @@ class GroupedQueryAttention(nn.Module):
             scale: Optional[float] = None,
             mask: Optional[Tensor] = None,
             use_lower_tri_attn: bool = False,
-            use_softmax1: bool = True,
+            use_softmax_one: bool = True,
             force_grouped: bool = False,
             need_weights: bool = False,
             average_attn_weights: bool = False
@@ -183,18 +189,23 @@ class GroupedQueryAttention(nn.Module):
             (k, v)
         )
         similarity = self._compute_scaled_similarity(q, k, scale, force_grouped)
+        print(f'group pattern is: {self.group_pattern}')
         similarity = self._masking_similarity(
-            q, k, similarity, mask,
+            q,
+            k,
+            similarity,
+            mask,
             use_lower_tri_attn,
-            use_softmax1
+            use_softmax_one
         )
 
-        attention = einsum(similarity, v, 'b h n s, b h s d -> b h n d')
-        x = rearrange(attention, 'b h n d -> b n h d')
+        attention = einsum(similarity, v, f'b {self.group_pattern} n s, b h_kv s d -> b {self.group_pattern} n d')
+        orig_pattern = ' '.join(self.group_pattern.split()[::-1])  # flatten order: head → group 
+        x = rearrange(attention, f'b {self.group_pattern} n d -> b n ({orig_pattern}) d')  
 
         attn_weights = None
         if need_weights:
-            attn_weights = rearrange(attention, 'b h n s -> b n s h')
+            attn_weights = rearrange(attention, f'b {self.group_pattern} n s -> b n s ({orig_pattern})')
             if average_attn_weights:
                 attn_weights = attn_weights.mean(dim=1)
 
