@@ -1,4 +1,4 @@
-from typing import Union, Optional, Callable
+from typing import Tuple, Union, Optional, Callable
 
 import torch
 from torch import nn, Tensor
@@ -8,9 +8,11 @@ from grouped_query_attentions import GroupedQueryAttention
 
 
 def compute_scale_constants(
-        num_encoders: Optional[int], num_decoders: Optional[int]
-) -> Tuple[int, float]:
+        num_encoders: Optional[int] = None,
+        num_decoders: Optional[int] = None
+) -> Tuple[Union[int, float], Union[int, float]]:
     # from MAGNETO paper
+
     assert not (num_encoders is None and num_decoders is None)
 
     if num_decoders is None:
@@ -33,11 +35,14 @@ def compute_scale_constants(
 class GQAEncoder(nn.Module):
     def __init__(
             self,
-            query_heads: int = 8, kv_heads: int = 4,
+            query_heads: int = 8,
+            kv_heads: int = 4,
             dim_head: Optional[int] = None,
-            dim_hidden: int = 3072, dropout_rate: float = 0.1,
+            dim_hidden: int = 3072,
+            dropout_rate: float = 0.1,
             bias: bool = True,
-            layer_norm_eps: float = 1e-5, gamma_init: float = 0.02,
+            layer_norm_eps: float = 1e-5,
+            gamma_init: float = 0.02,
             act_ftn: Union[str, Callable] = 'gelu',
             device: Optional[Union[str, torch.device]] = None,
             dtype: Optional[torch.dtype] = None
@@ -79,7 +84,10 @@ class GQAEncoder(nn.Module):
                 constant_(module.bias, val=0)
 
     def _apply_attention(
-            self, x: Tensor, mask: Optional[Tensor] = None, use_lta: bool = False
+            self,
+            x: Tensor,
+            mask: Optional[Tensor] = None,
+            use_lta: bool = False
     ) -> Tensor:
         x, _ = self.attn(x, mask=mask, use_lower_tri_attn=use_lta)  # first Layer normalization + Attention
         out = self.dropout(x)
@@ -98,7 +106,10 @@ class GQAEncoder(nn.Module):
         return sequential_layer(x)
 
     def forward(
-            self, input_tensor: Tensor, input_mask: Optional[Tensor] = None, use_lta: bool = False
+            self,
+            input_tensor: Tensor,
+            input_mask: Optional[Tensor] = None,
+            use_lta: bool = False
     ) -> Tensor:
         x = input_tensor + self._apply_attention(input_tensor, mask=input_mask, use_lta=use_lta)
         out = x + self._make_sequential_layer(x)
@@ -110,11 +121,14 @@ class GQAEncoder(nn.Module):
 class GQADecoder(nn.Module):
     def __init__(
             self,
-            query_heads: int = 8, kv_heads: int = 4,
+            query_heads: int = 8,
+            kv_heads: int = 4,
             dim_head: Optional[int] = None,
-            dim_hidden: int = 3072, dropout_rate: float = 0.1,
+            dim_hidden: int = 3072,
+            dropout_rate: float = 0.1,
             bias: bool = True,
-            layer_norm_eps: float = 1e-5, gamma_init: float = 0.02,
+            layer_norm_eps: float = 1e-5,
+            gamma_init: float = 0.02,
             act_ftn: Union[str, Callable] = 'gelu',
             device: Optional[Union[str, torch.device]] = None,
             dtype: Optional[torch.dtype] = None
@@ -209,9 +223,13 @@ class GQADecoder(nn.Module):
 class GQATransformer(nn.Module):
     def __init__(
             self,
-            query_heads: int = 8, kv_heads: int = 4, dim_head: Optional[int] = 32,
-            num_encoder_layers: int = 12, num_decoder_layers: Optional[int] = 12,
-            dim_hidden: int = 3072, dropout_rate: float = 0.1,
+            query_heads: int = 8,
+            kv_heads: int = 4,
+            dim_head: Optional[int] = 32,
+            num_encoder_layers: int = 12,
+            num_decoder_layers: Optional[int] = 12,
+            dim_hidden: int = 3072,
+            dropout_rate: float = 0.1,
             layer_norm_eps: float = 1e-12,
             act_ftn: Union[str, Callable] = 'gelu',
             device: Optional[Union[str, torch.device]] = None,
